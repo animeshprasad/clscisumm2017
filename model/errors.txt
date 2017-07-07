@@ -1,0 +1,17 @@
+Annotation errors in files  Reference Article:  C00-2123.xml  at Citance Number: 4
+Annotation errors in files  Reference Article:  C00-2123.xml  at Citance Number: 6
+Annotation errors in files  Reference Article:  C00-2123.xml  at Citance Number: 14
+Annotation errors in files  Reference Article:  C00-2123.xml  at Citance Number: 20
+
+Fixed Manually------
+Annotation errors in files  Reference Article:  J96-3004.xml  at Citance Number: 7  type2
+Annotation errors in files  Reference Article:  J96-3004.xml  at Citance Number: 17  type 2
+Annotation errors in files  Reference Article:  J96-3004.xml  at Citance Number: 18  type 2
+Annotation errors in files  Reference Article:  J96-3004.xml  at Citance Number: 20  type 2
+-------
+
+Annotation errors in files  Reference Article:  N06-2049.xml  at Citance Number: 3
+Annotation errors in files  Reference Article:  N06-2049.xml  at Citance Number: 13
+Annotation errors in files  Reference Article:  P06-2124.txt  at Citance Number: 5
+Annotation errors in files  Reference Article:  P06-2124.txt  at Citance Number: 12
+Annotation errors in files  Reference Article:   W03-0410.xml  at Citance Number: 14
