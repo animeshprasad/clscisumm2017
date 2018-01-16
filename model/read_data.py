@@ -14,18 +14,21 @@ from xml.etree import ElementTree as ET
 def preprocess(instring, marker=None):
 
     def replace(s):
-        s = re.sub('[0-9]+', 'T-INT', s)
-        s = re.sub('[0-9.]+', 'T-FLOAT', s)
+        s = re.sub('[0-9]+', ' ', s)
+        s = re.sub('[0-9.]+', ' ', s)
+        s = re.sub('-  ', '', s)
         s = re.sub('- ', '', s)
+        s = re.sub('-', '', s)
         return s
+    if marker is None:
+        marker = r"\(.*?\)"
+    else:
+        pass
+        #print marker
+    instring = re.sub(marker, '', instring)
+    instring = unicodedata.normalize('NFKD', unicode(instring,'utf-8'))
 
-    if marker:
-        instring = re.sub('marker', 'T-MARKER', instring)
-
-    normalstring = unicodedata.normalize('NFKD', instring)
-    normalstring = replace(normalstring)
-
-    return normalstring
+    return replace(instring)
 
 def parse_file(foldername, file, type='rdata'):
     """
@@ -41,7 +44,7 @@ def parse_file(foldername, file, type='rdata'):
             f = open(foldername + '/' + file + base + file + '.xml', 'r')
             for lines in f:
                 try:
-                    tokens = word_tokenize(ET.fromstring(lines).text.lower())
+                    tokens = word_tokenize(preprocess(ET.fromstring(lines).text.lower()))
                     sid = ET.fromstring(lines).get('sid')
                     to_return[sid] = tokens
                 except:
@@ -59,7 +62,7 @@ def parse_file(foldername, file, type='rdata'):
                     f = open(foldername + '/' + file + base + files, 'r')
                     for lines in f:
                         try:
-                            tokens = word_tokenize(ET.fromstring(lines).text.lower())
+                            tokens = word_tokenize(preprocess(ET.fromstring(lines).text.lower()))
                             sid = ET.fromstring(lines).get('sid')
                             to_return[files[:-4]][str(sid)] = tokens
                         except:
@@ -93,12 +96,13 @@ def parse_file(foldername, file, type='rdata'):
                         print 'Annotation errors in files ' + components[1] + ' at ' + components[0]
                         continue
                     for xml_statements in re.findall('<S.*?>.*?</S>', components[6]):
-                        tokens = word_tokenize(ET.fromstring(xml_statements).text.lower())
+                        #print components[4]
+                        tokens = word_tokenize(preprocess(ET.fromstring(xml_statements).text.lower(), marker=components[4]))
                         sid = ET.fromstring(xml_statements).get('sid')
                         ref_lines.append(sid)
                         ref_text.append(tokens)
                     for xml_statements in re.findall('<S.*?>.*?</S>', components[8]):
-                        tokens = word_tokenize(ET.fromstring(xml_statements).text.lower())
+                        tokens = word_tokenize(preprocess(ET.fromstring(xml_statements).text.lower(), marker=components[4]))
                         citance_text.append(tokens)
                     fac = components[9].split(':')[1].strip()
                     if fac in facet_types:
@@ -114,6 +118,78 @@ def parse_file(foldername, file, type='rdata'):
                     print 'Annotation errors in files ' + components[1] + ' at ' + components[0] + ' type 2'
                 else:
                     to_return_list.append((ref_lines, ref_text, citance_text, facets))
+        except:
+            pass
+        return to_return_list
+
+
+    elif type == 'test1b':
+        # Arranged in priority as inverse frequency
+        facet_types=['Hypothesis_Citation', 'Aim_Citation',
+                     'Implication_Citation',  'Results_Citation', 'Method_Citation']
+        try:
+            f = open(foldername + '/' + file, 'r')
+            print 'here'
+            for lines in f:
+                ref_lines = []
+                ref_text = []
+                citance_text = []
+
+                try:
+                    components = lines.split('|')
+                    if len(components) < 10:
+                        # Error caused by annotation delimeter | as part of text
+                        print 'Annotation errors in files ' + components[1] + ' at ' + components[0]
+                        continue
+                    for xml_statements in re.findall('<S.*?>.*?</S>', components[6]):
+                        print components[4]
+                        tokens = word_tokenize(preprocess(ET.fromstring(xml_statements).text.lower(), marker=components[4]))
+                        sid = ET.fromstring(xml_statements).get('sid')
+                        ref_lines.append(sid)
+                        ref_text.append(tokens)
+                        others = components[0] + ' | ' + components[1]
+                    for xml_statements in re.findall('<S.*?>.*?</S>', components[8]):
+                        tokens = word_tokenize(preprocess(ET.fromstring(xml_statements).text.lower(), marker=components[4]))
+                        citance_text.append(tokens)
+
+                except:
+                    continue
+                if ref_lines == [] or ref_text == [] or citance_text == []:
+                    print 'Annotation errors in files ' + components[1] + ' at ' + components[0] + ' type 2'
+                else:
+                    to_return_list.append((ref_lines, ref_text, citance_text,others ))
+        except:
+            pass
+        return to_return_list
+
+
+
+    elif type == 'tdata':
+        base = '/annotation/'
+        # Arranged in priority as inverse frequency
+        facet_types = ['Hypothesis_Citation', 'Aim_Citation',
+                       'Implication_Citation', 'Results_Citation', 'Method_Citation']
+        try:
+            f = open(foldername + '/' + file + base + file + '.ann.txt', 'r')
+            for lines in f:
+                if lines.strip() == '':
+                    continue
+                citance_text = []
+                try:
+                    components = lines.split('|')
+                    if len(components) < 7:
+                        # Error caused by annotation delimeter | as part of text
+                        print 'Annotation errors in files ' + components[1] + ' at ' + components[0]
+                        continue
+                    for xml_statements in re.findall('<S.*?>.*?</S>', components[6]):
+                        tokens = word_tokenize(preprocess(ET.fromstring(xml_statements).text.lower(), marker=components[4]))
+                        citance_text.append(tokens)
+                except:
+                    continue
+                if citance_text == []:
+                    print 'Annotation errors in files ' + components[1] + ' at ' + components[0] + ' type 2'
+                else:
+                    to_return_list.append(citance_text)
         except:
             pass
         return to_return_list
@@ -136,7 +212,7 @@ def read_training_files(foldername, type='rdata'):
     to_return = {}
 
     folders = os.listdir(foldername)
-    if type == 'rdata' or type == 'annot':
+    if type == 'rdata' or type == 'annot' or type=='tdata':
         for file in folders:
             to_return[file] = parse_file(foldername, file, type)
         return to_return
@@ -153,6 +229,29 @@ def get_data(task='1'):
     :param task:
     :return:
     """
+    all_tagged ={}
+    r_ref=[]
+    r_cit=[]
+    ot=[]
+    if task == 'test1b':
+        folders = os.listdir("../data/Test-2017/Task1")
+        for file in folders:
+            all_tagged[file] = parse_file("../data/Test-2017/Task1", file, 'test1b')
+            print file
+            for ref_id, ref_lines, cit_lines, others in all_tagged[file]:
+                #print ref_id, ref_lines, cit_lines
+                r_ref.append(sum(ref_lines,[]))
+                r_cit.append(sum(cit_lines,[]))
+                ot.append(others)
+        #print r_ref, r_cit
+        return  r_ref, r_cit, ot
+
+
+
+
+
+
+
     all_ref_files = read_training_files("../data/Training-Set-2017", 'rdata')
     all_tagged = read_training_files("../data/Training-Set-2017", 'annot')
 
@@ -262,5 +361,74 @@ def get_data(task='1'):
 
 
 if __name__ == "__main__":
-    get_data('1')
+    get_data('test1b')
+
+
+
+    exit()
+
+    folders = os.listdir('/Users/animeshprasad/PycharmProjects/scisumm/data/Test-Set-2017')
+    output = open('/Users/animeshprasad/PycharmProjects/scisumm/data/Test-2017/Task1/out', 'r')
+    #output_out = open('/Users/animeshprasad/PycharmProjects/scisumm/data/Test-2017/final', 'w')
+    annot={}
+    rlines={}
+
+    for file in folders:
+        try:
+            temp1 = open('/Users/animeshprasad/PycharmProjects/scisumm/data/Test-Set-2017' + '/' + file + '/annotation/' + file + '.ann.txt', 'r')
+            annot[file]= temp1.readlines()
+            rlines[file]=[]
+            tempff = open('/Users/animeshprasad/PycharmProjects/scisumm/data/Test-Set-2017' + '/' + file + '/Reference_XML/' + file + '.xml', 'r')
+            for lines in tempff:
+                try:
+                    if ET.fromstring(lines).get('sid'):
+                        rlines[file].append(lines.strip())
+                except:
+                    continue
+        except:
+            pass
+
+    output_final={}
+    for items in output:
+        a=items.strip().split()
+        if a[0][:8] not in output_final.keys():
+            output_final[a[0][:8]] = [[int(k[8:]) for k in a]]
+        else:
+            output_final[a[0][:8]].append([int(k[8:]) for k in a])
+
+
+    for file in annot.keys():
+        f= open('/Users/animeshprasad/PycharmProjects/scisumm/data/Test-2017/Task1/'+file+'.ann.txt','w')
+        for a,b in zip(annot[file],output_final[file]):
+            #print a
+            #print b
+            #raw_input()
+            #print a,b
+            if len (annot[file])!=len(output_final[file]):
+                print 'Exception'
+
+            a=a.strip()
+            s=''
+            for lin_no in b:
+                lin_no = int(lin_no)
+
+                try:
+                     for ln in xrange(lin_no-10, lin_no+10):
+                        if int(ET.fromstring(rlines[file][ln]).get('sid')) == lin_no:
+                            s += rlines[file][ln]
+                            break
+                except:
+                    print 'why'
+                    raw_input()
+            if a[-1] !='|':
+                a=a+'|'
+            f.write( a  +  ' Reference Offset: ' + str(b) + ' | ' +
+                     ' Reference Text: ' + s + ' | ' + ' Discourse Facet: ' + ' \n')
+
+
+
+
+
+
+
 

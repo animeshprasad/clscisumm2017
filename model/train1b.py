@@ -14,7 +14,9 @@ from keras.preprocessing.sequence import pad_sequences
 from keras.utils.np_utils import to_categorical
 from keras.layers import Dense, Input, Flatten, LSTM, Dropout
 from keras.layers import Conv1D, MaxPooling1D, Embedding, Bidirectional, Merge
-from keras.models import Model
+from keras.models import Model, Sequential
+from keras.optimizers import SGD
+from keras.callbacks import EarlyStopping
 from keras.metrics import binary_crossentropy 
 import sys
 import read_data
@@ -62,13 +64,15 @@ print('Found %s word vectors.' % len(embeddings_index))
 print('Processing text dataset')
 
 
-texts_r, texts_c, labels, facets = read_data.get_data()
+texts_r, texts_c, facets = read_data.get_data('1b')
+t_texts_r, t_texts_c,  = read_data.get_data('test1b')
 print('Found {} samples with label.'.format(len(texts_c)))
 
+print('Found {} samples without label.'.format(len(t_texts_c)))
 
-class_ratio=np.bincount(labels)
+class_ratio=np.bincount(facets)
 class_weight={}
-for i in xrange(len(set(labels))):
+for i in xrange(len(set(facets))):
     class_weight[i] = np.sum(class_ratio) / class_ratio[i]
 print('class ratio is : {}'.format(class_ratio))
 print('using class weight of inverse ratio as : {}'.format(class_weight))
@@ -78,9 +82,12 @@ print('using class weight of inverse ratio as : {}'.format(class_weight))
 # finally, vectorize the text samples into a 2D integer tensor
 tokenizer = Tokenizer(nb_words=MAX_NB_WORDS, char_level=True)
 # Fix for already tokenized texts
-tokenizer.fit_on_texts(texts_r + texts_c)
+tokenizer.fit_on_texts(texts_r + texts_c +t_texts_r + t_texts_c)
 sequences1 = tokenizer.texts_to_sequences(texts_r)
 sequences2 = tokenizer.texts_to_sequences(texts_c)
+
+t_sequences1 = tokenizer.texts_to_sequences(t_texts_r)
+t_sequences2 = tokenizer.texts_to_sequences(t_texts_c)
 
 print (sequences1[0], sequences2[0], texts_r[0], texts_c[0])
 #verify word indicies to be correct
@@ -91,8 +98,11 @@ print('Found %s unique tokens.' % len(word_index))
 data1 = pad_sequences(sequences1, maxlen=MAX_SEQUENCE_LENGTH, padding='post', truncating='post')
 data2 = pad_sequences(sequences2, maxlen=MAX_SEQUENCE_LENGTH, padding='post', truncating='post')
 
-labels = to_categorical(np.asarray(labels))
-facets = to_categorical(np.asarray(facets))
+t_data1 = pad_sequences(t_sequences1, maxlen=MAX_SEQUENCE_LENGTH, padding='post', truncating='post')
+t_data2 = pad_sequences(t_sequences2, maxlen=MAX_SEQUENCE_LENGTH, padding='post', truncating='post')
+
+#labels = to_categorical(np.asarray(labels))
+labels = to_categorical(np.asarray(facets))
 
 print('Shape of ref tensor:', data1.shape)
 print('Shape of cit tensor:', data2.shape)
@@ -106,26 +116,25 @@ data1 = data1[indices]
 data2 = data2[indices]
 labels = labels[indices]
 
-#Used for Blind Dev Test
+
 nb_validation_samples = int(VALIDATION_SPLIT * data1.shape[0])
-data1_t = data1[:-nb_validation_samples]
-data2_t = data2[:-nb_validation_samples]
-labels_t = labels[:-nb_validation_samples]
+data1_v = data1[-nb_validation_samples:]
+data2_v = data2[-nb_validation_samples:]
+labels_v = labels[-nb_validation_samples:]
 
 #used for Parameter Tuning
-nb_paramvalidation_samples = int(VALIDATION_SPLIT * data1_t.shape[0])
 
-x1_train = data1_t[:-nb_paramvalidation_samples]
-x2_train = data2_t[:-nb_paramvalidation_samples]
-y_train = labels_t[:-nb_paramvalidation_samples]
+x1_train = data1[:-nb_validation_samples]
+x2_train = data2[:-nb_validation_samples]
+y_train = labels[:-nb_validation_samples]
 
-x1_val = data1_t[-nb_paramvalidation_samples:]
-x2_val = data2_t[-nb_paramvalidation_samples:]
-y_val = labels_t[-nb_paramvalidation_samples:]
+x1_val = data1_v
+x2_val = data2_v
+y_val = labels_v
 
-x1_test = data1[-nb_validation_samples:]
-x2_test = data2[-nb_validation_samples:]
-y_test = labels[-nb_validation_samples:]
+x1_test = t_data1
+x2_test = t_data2
+
 
 
 print('Preparing embedding matrix.')
@@ -147,7 +156,13 @@ for word, i in word_index.items():
 
 # load pre-trained word embeddings into an Embedding layer
 # note that we set trainable = False so as to keep the embeddings fixed
-embedding_layer = Embedding(nb_words + 1,
+embedding_layer1 = Embedding(nb_words + 1,
+                            EMBEDDING_DIM,
+                            weights=[embedding_matrix],
+                            input_length=MAX_SEQUENCE_LENGTH,
+                            trainable=True)
+
+embedding_layer2 = Embedding(nb_words + 1,
                             EMBEDDING_DIM,
                             weights=[embedding_matrix],
                             input_length=MAX_SEQUENCE_LENGTH,
@@ -156,21 +171,25 @@ embedding_layer = Embedding(nb_words + 1,
 print('Training model.')
 
 # train a 1D convnet with global maxpooling
-sequence1_input = Input(shape=(MAX_SEQUENCE_LENGTH,), dtype='int32')
-sequence2_input = Input(shape=(MAX_SEQUENCE_LENGTH,), dtype='int32')
-embedded1_sequences = embedding_layer(sequence1_input)
-embedded2_sequences = embedding_layer(sequence2_input)
+#sequence1_input = Input(shape=(MAX_SEQUENCE_LENGTH,), dtype='int32')
+#sequence2_input = Input(shape=(MAX_SEQUENCE_LENGTH,), dtype='int32')
+#embedded1_sequences = embedding_layer(sequence1_input)
+#embedded2_sequences = embedding_layer(sequence2_input)
 
 #LSTM
-x1= Bidirectional(LSTM(64, dropout_W=0.2, dropout_U=0.2))(embedded1_sequences)
-x2= Bidirectional(LSTM(64, dropout_W=0.2, dropout_U=0.2))(embedded2_sequences)
-x1=Dense(64, activation='sigmoid')(x1)
-x2=Dense(64, activation='sigmoid')(x2)
+right=Sequential()
+right.add(embedding_layer1)
+right.add(Bidirectional(LSTM(64, dropout_W=0.2, dropout_U=0.2)))
+left=Sequential()
+left.add(embedding_layer2)
+left.add(Bidirectional(LSTM(64, dropout_W=0.2, dropout_U=0.2)))
+right.add(Dense(64, activation='sigmoid'))
+left.add(Dense(64, activation='sigmoid'))
 #preds=Dense(2, activation='sigmoid')(x1)
 
 model = Sequential()
-model.add(Merge([x1,x2], mode='dot'))
-model.add(Dense(2, activation='sigmoid')(x))
+model.add(Merge([right,left], mode='concat'))
+model.add(Dense(len(labels[0]), activation='sigmoid'))
 
 #x= Merge([x1,x2], mode='dot')
 #preds=Dense(2, activation='sigmoid')(x)
@@ -185,23 +204,20 @@ model.add(Dense(2, activation='sigmoid')(x))
 #x = Dropout(0.4)(Dense(64, activation='relu')(x))
 #preds = Dense(len(labels_index), activation='softmax')(x)
 
-model = Model([sequence1_input,sequence2_input], preds)
-model.compile(loss='categorical_crossentropy',
-              optimizer='rmsprop',
-              metrics=['acc', binary_crossentropy])
-
+model.compile(loss='categorical_crossentropy',optimizer=SGD(lr=0.0001,clipvalue=0.99, decay=1e-6, momentum=0.9, nesterov=True))
+callbacks = [EarlyStopping(monitor='val_loss', patience=0)]
 
 model.fit([x1_train,x2_train], y_train, validation_data=([x1_val, x2_val], y_val),
-          nb_epoch=2, batch_size=16, class_weight = None)
+          nb_epoch=2, batch_size=16, class_weight = None, callbacks=callbacks)
 
-scores = model.evaluate([x1_test, x2_test], y_test, verbose=0)
+#scores = model.evaluate([x1_test, x2_test], y_test, verbose=0)
 print ('Predict')
 print(  model.predict([x1_test, x2_test]).argmax(1))
 print ('True')
-print(  y_test.argmax(1))
+#print(  y_test.argmax(1))
 
-a,b,c,d=precision_recall_fscore_support(model.predict([x1_test, x2_test]).argmax(1), y_test.argmax(1))
-print (a[1],  b[1], c[1])
+#a,b,c,d=precision_recall_fscore_support(model.predict([x1_test, x2_test]).argmax(1), y_test.argmax(1))
+#print (a[1],  b[1], c[1])
 
 
 

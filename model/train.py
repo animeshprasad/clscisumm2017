@@ -18,7 +18,7 @@ from keras.layers import Conv1D, MaxPooling1D, Embedding, Bidirectional, Merge, 
 from keras.models import Model
 from keras.metrics import binary_crossentropy 
 import sys
-import read_data
+import read_data, read_data_downsampled
 from keras.optimizers import RMSprop
 
 #import tensorflow as tf
@@ -64,68 +64,84 @@ print('Processing text dataset')
 
 
 texts_r, texts_c, labels, flabels = read_data.get_data('1')
+
+tr_texts_r, tr_texts_c, tr_labels, tr_facets = read_data_downsampled.get_data('1', 'train')
+d_texts_r, d_texts_c, d_labels, d_facets = read_data_downsampled.get_data('1', 'dev')
+
 print('Found {} samples with label.'.format(len(texts_c)))
 
 
-class_ratio=np.bincount(labels)
+class_ratio=np.bincount(tr_labels)
 class_weight={}
-for i in xrange(len(set(labels))):
+for i in xrange(len(set(tr_labels))):
     class_weight[i] = np.sum(class_ratio) / class_ratio[i]
 print('class ratio is : {}'.format(class_ratio))
 print('using class weight of inverse ratio as : {}'.format(class_weight))
-#class_weight[1] = class_weight[1]*10000
+class_weight[1] = class_weight[1]*10
 
 
 # finally, vectorize the text samples into a 2D integer tensor
 tokenizer = Tokenizer(nb_words=MAX_NB_WORDS, char_level=True)
 # Fix for already tokenized texts
 tokenizer.fit_on_texts(texts_r + texts_c)
-sequences1 = tokenizer.texts_to_sequences(texts_r)
-sequences2 = tokenizer.texts_to_sequences(texts_c)
+tr_sequences1 = tokenizer.texts_to_sequences(tr_texts_r)
+tr_sequences2 = tokenizer.texts_to_sequences(tr_texts_c)
+d_sequences1 = tokenizer.texts_to_sequences(d_texts_r)
+d_sequences2 = tokenizer.texts_to_sequences(d_texts_c)
 
-print (len(sequences1[0]), len(sequences2[0]), len(texts_r[0]), len(texts_c[0]))
+
+
+
+print (len(tr_sequences1[0]), len(tr_sequences2[0]), len(tr_texts_r[0]), len(tr_texts_c[0]))
 #verify word indicies to be correct
 
 word_index = tokenizer.word_index
 print('Found %s unique tokens.' % len(word_index))
 
-data1 = pad_sequences(sequences1, maxlen=MAX_SEQUENCE_LENGTH, padding='post', truncating='post')
-data2 = pad_sequences(sequences2, maxlen=2*MAX_SEQUENCE_LENGTH, padding='post', truncating='post')
+tr_data1 = pad_sequences(tr_sequences1, maxlen=MAX_SEQUENCE_LENGTH, padding='post', truncating='post')
+tr_data2 = pad_sequences(tr_sequences2, maxlen=2*MAX_SEQUENCE_LENGTH, padding='post', truncating='post')
+d_data1 = pad_sequences(d_sequences1, maxlen=MAX_SEQUENCE_LENGTH, padding='post', truncating='post')
+d_data2 = pad_sequences(d_sequences2, maxlen=2*MAX_SEQUENCE_LENGTH, padding='post', truncating='post')
 
-labels = to_categorical(np.asarray(labels))
+tr_labels = to_categorical(np.asarray(tr_labels))
+d_labels = to_categorical(np.asarray(d_labels))
 
-print('Shape of ref tensor:', data1.shape)
-print('Shape of cit tensor:', data2.shape)
-print('Shape of label tensor:', labels.shape)
+print('Shape of ref tensor:', tr_data1.shape)
+print('Shape of cit tensor:', tr_data2.shape)
+print('Shape of label tensor:', tr_labels.shape)
 
 
 # split the data into a training set and a validation set
-indices = np.arange(data1.shape[0])
+indices = np.arange(tr_data1.shape[0])
 np.random.shuffle(indices)
-data1 = data1[indices]
-data2 = data2[indices]
-labels = labels[indices]
+tr_data1 = tr_data1[indices]
+tr_data2 = tr_data2[indices]
+tr_labels = tr_labels[indices]
 
 #Used for Blind Dev Test
-nb_validation_samples = int(VALIDATION_SPLIT * data1.shape[0])
-data1_t = data1[:-nb_validation_samples]
-data2_t = data2[:-nb_validation_samples]
-labels_t = labels[:-nb_validation_samples]
+indices = np.arange(d_data1.shape[0])
+np.random.shuffle(indices)
+d_data1 = d_data1[indices]
+d_data2 = d_data2[indices]
+d_labels = d_labels[indices]
+
+
 
 #used for Parameter Tuning
-nb_paramvalidation_samples = int(VALIDATION_SPLIT * data1_t.shape[0])
+nb_paramvalidation_samples = int(VALIDATION_SPLIT * tr_data1.shape[0])
 
-x1_train = data1_t[:-nb_paramvalidation_samples]
-x2_train = data2_t[:-nb_paramvalidation_samples]
-y_train = labels_t[:-nb_paramvalidation_samples]
+x1_train = tr_data1[:-nb_paramvalidation_samples]
+x2_train = tr_data2[:-nb_paramvalidation_samples]
+y_train = tr_labels[:-nb_paramvalidation_samples]
 
-x1_val = data1_t[-nb_paramvalidation_samples:]
-x2_val = data2_t[-nb_paramvalidation_samples:]
-y_val = labels_t[-nb_paramvalidation_samples:]
+x1_val = tr_data1[-nb_paramvalidation_samples:]
+x2_val = tr_data2[-nb_paramvalidation_samples:]
+y_val = tr_labels[-nb_paramvalidation_samples:]
 
-x1_test = data1[-nb_validation_samples:]
-x2_test = data2[-nb_validation_samples:]
-y_test = labels[-nb_validation_samples:]
+#later test set
+x1_test = d_data1
+x2_test = d_data2
+y_test = d_labels
 
 
 print('Preparing embedding matrix.')
@@ -158,7 +174,7 @@ embedding_layer1 = Embedding(nb_words + 1,
 embedding_layer2 = Embedding(nb_words + 1,
                             EMBEDDING_DIM,
                             weights=[embedding_matrix],
-                            input_length=MAX_SEQUENCE_LENGTH,
+                            input_length=2*MAX_SEQUENCE_LENGTH,
                             trainable=True)
 
 print('Training model.')
@@ -175,13 +191,13 @@ right.add(LSTM(output_dim=100, input_shape=(MAX_SEQUENCE_LENGTH,EMBEDDING_DIM),r
 #right.add(TimeDistributed(Dense(100)))
 
 model = Sequential()
-model.add(Merge([left, right],mode='dot'))
+model.add(Merge([left, right], mode='dot'))
 #model.add(Flatten())
 model.add(Dense(2))
 model.add(Activation('softmax'))
 model.compile(loss='categorical_crossentropy',optimizer=RMSprop(clipvalue=0.99))
 
-model.fit([x1_train,x2_train], y_train, nb_epoch=2,
+model.fit([x1_train,x2_train], y_train, nb_epoch=3,
           validation_data=([x1_val, x2_val], y_val),class_weight=class_weight)
 
 
@@ -245,7 +261,7 @@ print ('True')
 print(  y_test.argmax(1))
 
 a,b,c,d=precision_recall_fscore_support(model.predict([x1_test, x2_test]).argmax(1), y_test.argmax(1))
-print (a[1],  b[1], c[1])
+print (a,  b, c)
 
 
 
