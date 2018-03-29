@@ -4,7 +4,7 @@ WING-NUS submission at CL-SciSumm 2017. This is the code used for experiment. Th
 
 
 Related Publication(s):
-
+```
 @InProceedings{prasad:2017:CL-SciSumm,
   author    = {Prasad, Animesh},
   title={WING-NUS at CL-SciSumm 2017: Learning from Syntactic and Semantic Similarity for Citation Contextualization},
@@ -16,3 +16,4 @@ Related Publication(s):
   pages     = {26–32},
   url       = {http://ceur-ws.org/Vol-2002/nusclscisumm2017.pdf}
 } 
+```
